@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from database.db import (
     get_all_services, get_service_by_name_or_id, get_all_barbers, get_available_slots,
     book_appointment, cancel_appointment_by_phone, get_appointments_by_phone,
-    log_complaint, add_to_handover_queue
+    log_complaint, add_to_handover_queue, get_ist_now
 )
 try:
     from salon_config import SALON_NAME, PHONE_WHATSAPP, ADDRESS, OPERATING_HOURS
@@ -361,7 +361,7 @@ class RuleBasedSalonChatbot:
         extracted["barber"] = self.DEFAULT_BARBER
 
         # 6. Date Extraction
-        today = datetime.now()
+        today = get_ist_now()
         today_date_str = today.strftime("%Y-%m-%d")
         if self.state == "AWAITING_DATE":
             if stripped in ["1", "today", "aaj"] or stripped.startswith("1 "):
@@ -842,8 +842,8 @@ class RuleBasedSalonChatbot:
             return (
                 f"⚠️ The date *{bad_d}* is in the past! Razors-n-scissors cannot book appointments in the past.\n\n"
                 f"Please choose an upcoming day:\n"
-                f"1️⃣ Reply *1* for Today ({datetime.now().strftime('%a, %b %d')})\n"
-                f"2️⃣ Reply *2* for Tomorrow ({(datetime.now() + timedelta(days=1)).strftime('%a, %b %d')})\n"
+                f"1️⃣ Reply *1* for Today ({get_ist_now().strftime('%a, %b %d')})\n"
+                f"2️⃣ Reply *2* for Tomorrow ({(get_ist_now() + timedelta(days=1)).strftime('%a, %b %d')})\n"
                 f"💡 Or enter any upcoming date like {today_date_str}."
             )
 
@@ -854,7 +854,7 @@ class RuleBasedSalonChatbot:
             price_info = f" (₹{int(s_obj['price_inr'])})" if s_obj else ""
             dur_info = f" · {s_obj['duration_minutes']} mins" if s_obj else ""
 
-            today = datetime.now()
+            today = get_ist_now()
             today_date_str = today.strftime("%Y-%m-%d")
             today_str = today.strftime("%a, %b %d")
             tomorrow = today + timedelta(days=1)
@@ -894,7 +894,7 @@ class RuleBasedSalonChatbot:
             slots = get_available_slots("default", date_str)
 
             # If booking for today, filter out passed hours
-            now = datetime.now()
+            now = get_ist_now()
             if date_str == now.strftime("%Y-%m-%d"):
                 cur_time = now.strftime("%H:%M")
                 slots = [s for s in slots if s > cur_time]

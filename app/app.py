@@ -49,7 +49,8 @@ from database.db import (
     get_all_complaints, resolve_complaint, get_handover_queue, resolve_handover,
     get_live_metrics, update_appointment_status, is_salon_closed,
     set_salon_closed, set_salon_open, get_all_holidays, get_active_barbers,
-    set_barber_attendance, get_barber_roster, book_appointment, book_walkin_appointment
+    set_barber_attendance, get_barber_roster, book_appointment, book_walkin_appointment,
+    get_ist_now
 )
 
 # Page Setup
@@ -235,7 +236,7 @@ st.markdown("""
 # ----------------- LIVE CLOUD DATA FETCHER -----------------
 def fetch_live_cloud_data():
     """Fetches real-time appointments and metrics with local DB fallback."""
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = get_ist_now().strftime("%Y-%m-%d")
     try:
         resp_apps = requests.get(f"{LIVE_API_BASE}/api/appointments", timeout=2.2)
         resp_metrics = requests.get(f"{LIVE_API_BASE}/api/metrics", timeout=2.2)
@@ -330,9 +331,9 @@ def send_action_update(action_type: str, payload: dict = None):
 
 
 # ----------------- SESSION STATE -----------------
-today_str = datetime.now().strftime("%Y-%m-%d")
+today_str = get_ist_now().strftime("%Y-%m-%d")
 if "last_sync" not in st.session_state:
-    st.session_state.last_sync = datetime.now().strftime("%H:%M:%S")
+    st.session_state.last_sync = get_ist_now().strftime("%H:%M:%S")
 
 # ----------------- SIDEBAR -----------------
 with st.sidebar:
@@ -350,7 +351,7 @@ with st.sidebar:
     st.markdown("### ⚡ Live Counter Sync")
     auto_refresh = st.toggle("Auto-Refresh (30s)", value=False, help="Enable automatic background refresh every 30 seconds. Disabled by default to prevent screen flicker.")
     if st.button("🔄 Refresh Counter Data", use_container_width=True):
-        st.session_state.last_sync = datetime.now().strftime("%H:%M:%S")
+        st.session_state.last_sync = get_ist_now().strftime("%H:%M:%S")
         st.rerun()
 
     st.caption(f"Last updated: {st.session_state.last_sync}")
@@ -384,7 +385,7 @@ st.markdown(f"""
     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
         <div>
             <h1 class="reception-title">💈 {SALON_NAME} · Front Desk Reception</h1>
-            <p class="reception-subtitle">Campus Grooming Hub · {ADDRESS} · {datetime.now().strftime('%A, %B %d, %Y')}</p>
+            <p class="reception-subtitle">Campus Grooming Hub · {ADDRESS} · {get_ist_now().strftime('%A, %B %d, %Y')}</p>
         </div>
         <div style="display:flex; align-items:center; gap:10px;">
             {'<span class="pill-closed">🔴 Salon Closed Today</span>' if is_closed_today else f'<span class="pill-open">🟢 Salon Open · {active_barber_count} Station(s) Active</span>'}
@@ -425,7 +426,7 @@ with quick_col1:
         }
         w_chair = st.selectbox("Assign Station:", list(barber_choices.keys()), key="w_chair")
 
-        w_time = st.text_input("Time Slot (HH:MM):", value=datetime.now().strftime("%H:%M"), key="w_time")
+        w_time = st.text_input("Time Slot (HH:MM):", value=get_ist_now().strftime("%H:%M"), key="w_time")
 
         if st.button("Confirm Walk-In & Seat Now ✂️", use_container_width=True, type="primary"):
             if not w_name.strip() or len(w_phone.strip()) < 10:
@@ -476,7 +477,7 @@ with quick_col2:
 
         st.divider()
         st.caption("Schedule a Future Closed Date / Holiday:")
-        future_date = st.date_input("Select Date:", min_value=datetime.now().date(), key="f_date")
+        future_date = st.date_input("Select Date:", min_value=get_ist_now().date(), key="f_date")
         f_reason = st.text_input("Reason:", placeholder="e.g. Festival, Deep Cleaning, Campus Maintenance", key="f_reason")
         if st.button("Set Date Closed", key="btn_close_date"):
             d_str = future_date.strftime("%Y-%m-%d")
@@ -662,7 +663,7 @@ display_apps = all_apps
 if date_filter == "Today Only":
     display_apps = [a for a in display_apps if a.get("appointment_date") == today_str]
 elif date_filter == "Tomorrow":
-    tomorrow_str = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    tomorrow_str = (get_ist_now() + timedelta(days=1)).strftime("%Y-%m-%d")
     display_apps = [a for a in display_apps if a.get("appointment_date") == tomorrow_str]
 
 # 2. Status

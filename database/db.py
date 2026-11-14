@@ -8,7 +8,13 @@ import sqlite3
 import json
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def get_ist_now() -> datetime:
+    """Returns current datetime in Indian Standard Time (IST, UTC+5:30) for salon operations in Punjab."""
+    return datetime.now(IST)
 
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(DB_DIR)
@@ -354,7 +360,7 @@ def get_active_barbers(date_str: str = None) -> list[dict]:
     If no explicit roster is set for that date, all barbers in the DB are assumed on duty.
     """
     if not date_str:
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        date_str = get_ist_now().strftime("%Y-%m-%d")
 
     all_barbers = get_all_barbers()
     conn = get_connection()
@@ -390,7 +396,7 @@ def set_barber_attendance(date_str: str, barber_id: str, is_active: bool) -> boo
 def get_barber_roster(date_str: str = None) -> list[dict]:
     """Returns all barbers with their on-duty status (True/False) for date_str."""
     if not date_str:
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        date_str = get_ist_now().strftime("%Y-%m-%d")
 
     all_barbers = get_all_barbers()
     conn = get_connection()
@@ -422,8 +428,8 @@ def get_available_slots(barber_id=None, date_str=None):
         date_str = str(barber_id)
         barber_id = None
 
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    current_time_str = datetime.now().strftime("%H:%M")
+    today_str = get_ist_now().strftime("%Y-%m-%d")
+    current_time_str = get_ist_now().strftime("%H:%M")
 
     if not date_str:
         date_str = today_str
@@ -525,8 +531,8 @@ def book_appointment(customer_name, phone, service_id, barber_id=None, date_str=
     Supports single or multi-service combinations (e.g. 'Hair Cut + Beard Trim').
     Returns (success: bool, message: str, appointment_id: int or None)
     """
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    current_time_str = datetime.now().strftime("%H:%M")
+    today_str = get_ist_now().strftime("%Y-%m-%d")
+    current_time_str = get_ist_now().strftime("%H:%M")
 
     if not date_str:
         date_str = today_str
@@ -648,9 +654,9 @@ def book_appointment(customer_name, phone, service_id, barber_id=None, date_str=
 
 def book_walkin_appointment(customer_name: str, phone: str, service_id: str, barber_id: str = None, time_str: str = None) -> tuple[bool, str, int | None]:
     """Immediate counter walk-in reservation with automatic station assignment."""
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = get_ist_now().strftime("%Y-%m-%d")
     if not time_str:
-        time_str = datetime.now().strftime("%H:%M")
+        time_str = get_ist_now().strftime("%H:%M")
     return book_appointment(customer_name, phone, service_id, barber_id=barber_id, date_str=today_str, time_str=time_str)
 
 
@@ -864,7 +870,7 @@ def update_appointment_status(appointment_id: int, new_status: str, station_id: 
 
 def get_live_metrics() -> dict:
     """Computes real-time KPIs for owner dashboard and API."""
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = get_ist_now().strftime("%Y-%m-%d")
     conn = get_connection()
     cursor = conn.cursor()
     

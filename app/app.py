@@ -40,6 +40,10 @@ except Exception:
     OPERATING_HOURS = "Mon–Sun: 9:00 AM – 9:00 PM"
     TAGLINE = "Groom yourself at Razors-n-scissors"
 
+import importlib
+import database.db
+importlib.reload(database.db)
+
 from database.db import (
     init_db, get_all_services, get_all_barbers, get_all_appointments,
     get_all_complaints, resolve_complaint, get_handover_queue, resolve_handover,
@@ -285,28 +289,44 @@ def send_action_update(action_type: str, payload: dict = None):
         pass
 
     # Apply locally as well for immediate consistency
-    if action_type == "status":
-        update_appointment_status(payload.get("id", 0), payload.get("status", "COMPLETED"), payload.get("station_id"))
-    elif action_type == "holiday":
-        if payload.get("is_closed"):
-            set_salon_closed(payload.get("date_str"), payload.get("reason", "Shop Holiday"))
-        else:
-            set_salon_open(payload.get("date_str"))
-    elif action_type == "roster":
-        set_barber_attendance(payload.get("date_str"), payload.get("barber_id"), payload.get("is_active"))
-    elif action_type == "handover":
-        resolve_handover(payload.get("id"))
-    elif action_type == "complaint":
-        resolve_complaint(payload.get("id"), payload.get("notes", "Resolved at counter"))
-    elif action_type == "walkin":
-        book_appointment(
-            customer_name=payload.get("customer_name"),
-            phone=payload.get("phone"),
-            service_id=payload.get("service_id"),
-            barber_id=payload.get("barber_id"),
-            date_str=payload.get("date_str"),
-            time_str=payload.get("time_str")
-        )
+    try:
+        if action_type == "status":
+            raw_id = payload.get("id", 0)
+            try:
+                app_id = int(raw_id)
+            except Exception:
+                app_id = 0
+            st_val = str(payload.get("status", "COMPLETED"))
+            station_val = payload.get("station_id")
+            try:
+                update_appointment_status(app_id, st_val, station_id=station_val)
+            except TypeError:
+                try:
+                    update_appointment_status(app_id, st_val, station_val)
+                except TypeError:
+                    update_appointment_status(app_id, st_val)
+        elif action_type == "holiday":
+            if payload.get("is_closed"):
+                set_salon_closed(payload.get("date_str"), payload.get("reason", "Shop Holiday"))
+            else:
+                set_salon_open(payload.get("date_str"))
+        elif action_type == "roster":
+            set_barber_attendance(payload.get("date_str"), payload.get("barber_id"), payload.get("is_active"))
+        elif action_type == "handover":
+            resolve_handover(payload.get("id"))
+        elif action_type == "complaint":
+            resolve_complaint(payload.get("id"), payload.get("notes", "Resolved at counter"))
+        elif action_type == "walkin":
+            book_appointment(
+                customer_name=payload.get("customer_name"),
+                phone=payload.get("phone"),
+                service_id=payload.get("service_id"),
+                barber_id=payload.get("barber_id"),
+                date_str=payload.get("date_str"),
+                time_str=payload.get("time_str")
+            )
+    except Exception as ex:
+        print(f"[send_action_update Local Error]: {ex}")
 
 
 # ----------------- SESSION STATE -----------------

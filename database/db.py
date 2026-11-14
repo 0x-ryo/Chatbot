@@ -836,16 +836,26 @@ def get_chat_logs(limit=50):
     return [dict(r) for r in rows]
 
 
-def update_appointment_status(appointment_id: int, new_status: str, station_id: str = None) -> bool:
+def update_appointment_status(appointment_id: int, new_status: str, station_id: str = None, *args, **kwargs) -> bool:
     """Updates the status of an appointment (e.g. IN_SERVICE, COMPLETED, CANCELLED) and optionally reassigns station."""
+    if not station_id and "station_id" in kwargs:
+        station_id = kwargs["station_id"]
+    if not station_id and args:
+        station_id = args[0]
+
+    try:
+        app_id_int = int(appointment_id)
+    except (ValueError, TypeError):
+        app_id_int = 0
+
     conn = get_connection()
     cursor = conn.cursor()
     if station_id:
         stn_name = "Station 2" if "2" in str(station_id) else "Station 1"
         b_id = "B2" if "2" in str(station_id) else "B1"
-        cursor.execute("UPDATE appointments SET status = ?, barber_id = ?, barber_name = ? WHERE id = ?", (new_status.upper(), b_id, stn_name, appointment_id))
+        cursor.execute("UPDATE appointments SET status = ?, barber_id = ?, barber_name = ? WHERE id = ?", (str(new_status).upper(), b_id, stn_name, app_id_int))
     else:
-        cursor.execute("UPDATE appointments SET status = ? WHERE id = ?", (new_status.upper(), appointment_id))
+        cursor.execute("UPDATE appointments SET status = ? WHERE id = ?", (str(new_status).upper(), app_id_int))
     rows_affected = cursor.rowcount
     conn.commit()
     conn.close()

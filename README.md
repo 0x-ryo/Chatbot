@@ -41,6 +41,8 @@ This project delivers an enterprise-grade, **zero-cost, 24/7 cloud-native AI cus
 4. **Live Real-Time Dashboard Sync:** Streamlit Cloud dashboard synchronizes appointments, metrics, revenue KPIs, and staff escalation queues from the Render cloud backend every 5 seconds.
 5. **Zero Hallucination Guarantee & Responsible AI:** Strict grounding in verified relational tables and JSON knowledge bases, DPDP Act PII masking, and explicit medical safety boundary filters (refusing scalp disorder diagnoses).
 6. **Multi-Service & Interval Conflict Prevention:** Automatically aggregates durations and combo pricing for multi-service requests (`1 and 2`) while strictly blocking chair overlap collisions ($\text{start}_1 < \text{end}_2 \land \text{end}_1 > \text{start}_2$).
+7. **Dynamic Fair Alternating Station Allocation:** Automatically balances customer seating between Station 1 and Station 2 with alternating rotation and daily load balancing, eliminating single-station bias while keeping customer prompts strictly professional.
+8. **Automated Outbound WhatsApp Notifications:** Real-time customer dispatch of cancellation confirmation notices and official service visit receipts + thank-you greetings upon billing completion, complete with strict past-date and past-time slot rejection across all channels.
 
 ---
 

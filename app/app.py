@@ -413,17 +413,28 @@ with quick_col1:
             else:
                 svc_id = svc_options[w_svc]
                 b_id = barber_choices[w_chair]
-                send_action_update("walkin", {
-                    "customer_name": w_name.strip(),
-                    "phone": w_phone.strip(),
-                    "service_id": svc_id,
-                    "barber_id": b_id,
-                    "date_str": today_str,
-                    "time_str": w_time.strip()
-                })
-                st.success(f"Walk-in for {w_name} confirmed and queued!")
-                time.sleep(1)
-                st.rerun()
+                ok, msg, app_id = book_appointment(
+                    customer_name=w_name.strip(),
+                    phone=w_phone.strip(),
+                    service_id=svc_id,
+                    barber_id=b_id,
+                    date_str=today_str,
+                    time_str=w_time.strip()
+                )
+                if ok:
+                    send_action_update("walkin", {
+                        "customer_name": w_name.strip(),
+                        "phone": w_phone.strip(),
+                        "service_id": svc_id,
+                        "barber_id": b_id,
+                        "date_str": today_str,
+                        "time_str": w_time.strip()
+                    })
+                    st.success(f"Walk-in for {w_name} confirmed (Booking #{app_id})!")
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error(msg)
 
 with quick_col2:
     with st.expander("📅 **Shop Closed / Holiday Manager**", expanded=False):
@@ -561,7 +572,8 @@ with st_col1:
             st.caption(f"Started at: {cur['start_time']} | Scheduled End: {cur.get('end_time', 'N/A')}")
             if st.button("Complete Service & Mark Paid ✅", key=f"ch1_comp_{cur['id']}", use_container_width=True):
                 send_action_update("status", {"id": cur['id'], "status": "COMPLETED"})
-                st.toast(f"Station 1 service completed for {cur['customer_name']}!")
+                st.toast(f"Station 1 service completed! WhatsApp visit receipt sent to {cur['customer_name']}.")
+                time.sleep(0.5)
                 st.rerun()
         else:
             st.markdown('<span class="badge-completed">READY / AVAILABLE</span>', unsafe_allow_html=True)
@@ -593,7 +605,8 @@ with st_col2:
             st.caption(f"Started at: {cur['start_time']} | Scheduled End: {cur.get('end_time', 'N/A')}")
             if st.button("Complete Service & Mark Paid ✅", key=f"ch2_comp_{cur['id']}", use_container_width=True):
                 send_action_update("status", {"id": cur['id'], "status": "COMPLETED"})
-                st.toast(f"Station 2 service completed for {cur['customer_name']}!")
+                st.toast(f"Station 2 service completed! WhatsApp visit receipt sent to {cur['customer_name']}.")
+                time.sleep(0.5)
                 st.rerun()
         else:
             st.markdown('<span class="badge-completed">READY / AVAILABLE</span>', unsafe_allow_html=True)
@@ -704,13 +717,16 @@ if display_apps:
                             send_action_update("status", {"id": app['id'], "status": "IN_SERVICE", "station_id": "B2"})
                             st.rerun()
                     with btn_a3:
-                        if st.button("❌", key=f"cnl_{app['id']}", use_container_width=True, help="Cancel booking"):
+                        if st.button("❌", key=f"cnl_{app['id']}", use_container_width=True, help="Cancel booking and dispatch WhatsApp notification"):
                             send_action_update("status", {"id": app['id'], "status": "CANCELLED"})
+                            st.toast(f"Booking #{app['id']} cancelled! WhatsApp cancellation notice dispatched to {app['customer_name']}.")
+                            time.sleep(0.5)
                             st.rerun()
                 elif st_val == "IN_SERVICE":
                     if st.button("Complete & Billed ✅", key=f"done_{app['id']}", use_container_width=True, type="primary"):
                         send_action_update("status", {"id": app['id'], "status": "COMPLETED"})
-                        st.toast(f"Booking #{app['id']} marked COMPLETED!")
+                        st.toast(f"Booking #{app['id']} completed & billed! WhatsApp visit receipt dispatched to {app['customer_name']}.")
+                        time.sleep(0.5)
                         st.rerun()
                 else:
                     st.caption("Archived")

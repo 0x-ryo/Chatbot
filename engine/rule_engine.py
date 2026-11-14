@@ -362,21 +362,38 @@ class RuleBasedSalonChatbot:
 
         # 6. Date Extraction
         today = datetime.now()
+        today_date_str = today.strftime("%Y-%m-%d")
         if self.state == "AWAITING_DATE":
             if stripped in ["1", "today", "aaj"] or stripped.startswith("1 "):
-                extracted["date"] = today.strftime("%Y-%m-%d")
+                extracted["date"] = today_date_str
             elif stripped in ["2", "tomorrow", "kal"] or stripped.startswith("2 "):
                 extracted["date"] = (today + timedelta(days=1)).strftime("%Y-%m-%d")
 
         if "date" not in extracted:
             if re.search(r"\b(today|aaj)\b", text_lower):
-                extracted["date"] = today.strftime("%Y-%m-%d")
+                extracted["date"] = today_date_str
             elif re.search(r"\b(tomorrow|kal)\b", text_lower):
                 extracted["date"] = (today + timedelta(days=1)).strftime("%Y-%m-%d")
+            elif re.search(r"\b(yesterday|kal\s+bhi|beeta\s+kal)\b", text_lower):
+                extracted["past_date_attempt"] = (today - timedelta(days=1)).strftime("%Y-%m-%d")
             else:
                 date_match = re.search(r"\b(202\d-[01]\d-[0-3]\d)\b", text)
-                if date_match:
-                    extracted["date"] = date_match.group(1)
+                if not date_match:
+                    # Also check DD-MM-YYYY or DD/MM/YYYY
+                    alt_match = re.search(r"\b([0-3]\d)[-/]([01]\d)[-/](202\d)\b", text)
+                    if alt_match:
+                        d, m, y = alt_match.groups()
+                        cand_iso = f"{y}-{m}-{d}"
+                        if cand_iso >= today_date_str:
+                            extracted["date"] = cand_iso
+                        else:
+                            extracted["past_date_attempt"] = cand_iso
+                else:
+                    cand_date = date_match.group(1)
+                    if cand_date >= today_date_str:
+                        extracted["date"] = cand_date
+                    else:
+                        extracted["past_date_attempt"] = cand_date
 
         # 7. Time Extraction
         time_match = re.search(r"\b(?:at\s+)?([01]?\d|2[0-3]):([0-5]\d)\s*(am|pm)?\b", text_lower)
@@ -815,6 +832,19 @@ class RuleBasedSalonChatbot:
                 "6️⃣ *D-Tan Cleaner* — ₹300\n"
                 "7️⃣ *Hair Colour* — ₹450\n\n"
                 "💡 _Reply with a number (1-7) or full code from catalog (S1-S16)_"
+            )
+
+        # Check if user entered a past date
+        if self.slots.get("past_date_attempt"):
+            bad_d = self.slots.pop("past_date_attempt", None)
+            self.slots["date"] = None
+            self.state = "AWAITING_DATE"
+            return (
+                f"⚠️ The date *{bad_d}* is in the past! Razors-n-scissors cannot book appointments in the past.\n\n"
+                f"Please choose an upcoming day:\n"
+                f"1️⃣ Reply *1* for Today ({datetime.now().strftime('%a, %b %d')})\n"
+                f"2️⃣ Reply *2* for Tomorrow ({(datetime.now() + timedelta(days=1)).strftime('%a, %b %d')})\n"
+                f"💡 Or enter any upcoming date like {today_date_str}."
             )
 
         # Slot 2: Date (Day Selection)

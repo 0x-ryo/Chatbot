@@ -410,14 +410,27 @@ def get_barber_roster(date_str: str = None) -> list[dict]:
 def get_available_slots(barber_id=None, date_str=None):
     """
     Computes available 30-minute time slots between 09:00 and 20:30 on a given date.
+    - If date_str is in the past -> returns []
     - If salon is closed on date_str -> returns []
-    - Dynamically scales capacity based on active barbers on duty:
-      - 2 Barbers active -> slot allows 2 concurrent bookings (Chair 1 & Chair 2)
-      - 1 Barber active  -> slot allows 1 booking
-      - 0 Barbers active -> returns []
+    - Dynamically scales capacity based on active stations on duty:
+      - 2 Stations active -> slot allows 2 concurrent bookings (Station 1 & Station 2)
+      - 1 Station active  -> slot allows 1 booking
+      - 0 Stations active -> returns []
     """
+    # If first argument looks like a date string (YYYY-MM-DD) and date_str is None, swap them
+    if barber_id and re.match(r"^\d{4}-\d{2}-\d{2}$", str(barber_id)) and not date_str:
+        date_str = str(barber_id)
+        barber_id = None
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    current_time_str = datetime.now().strftime("%H:%M")
+
     if not date_str:
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        date_str = today_str
+
+    # Past Date Check: strictly reject past dates
+    if date_str < today_str:
+        return []
 
     # 1. Holiday Check
     closed, _ = is_salon_closed(date_str)
@@ -458,6 +471,10 @@ def get_available_slots(barber_id=None, date_str=None):
 
     available = []
     for cand in candidate_slots:
+        # If booking for today, past time slots cannot be booked
+        if date_str == today_str and cand <= current_time_str:
+            continue
+
         try:
             cand_dt = datetime.strptime(cand, "%H:%M")
         except Exception:
@@ -503,24 +520,36 @@ def get_available_slots(barber_id=None, date_str=None):
 
 def book_appointment(customer_name, phone, service_id, barber_id=None, date_str=None, time_str=None):
     """
-    Creates a new appointment with strict interval conflict detection and dynamic chair allocation.
+    Creates a new appointment with strict interval conflict detection, dynamic station allocation,
+    and past date/time validation.
     Supports single or multi-service combinations (e.g. 'Hair Cut + Beard Trim').
     Returns (success: bool, message: str, appointment_id: int or None)
     """
-    if not date_str:
-        date_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    current_time_str = datetime.now().strftime("%H:%M")
 
-    # 1. Holiday Check
+    if not date_str:
+        date_str = today_str
+
+    # 1. Past Date Check: strictly refuse booking in the past
+    if date_str < today_str:
+        return False, f"Cannot book appointments for past dates ({date_str}). Please select today ({today_str}) or an upcoming date.", None
+
+    # 2. Past Time Check: if booking for today, time slot must be in the future
+    if date_str == today_str and time_str and time_str < current_time_str:
+        return False, f"Cannot book a past time slot ({time_str}) for today. Current salon time is {current_time_str}. Please choose an upcoming time slot.", None
+
+    # 3. Holiday Check
     closed, reason = is_salon_closed(date_str)
     if closed:
         return False, f"Razors-n-scissors is closed on {date_str} ({reason}). No appointments can be booked on this day.", None
 
-    # 2. Service resolution
+    # 4. Service resolution
     service = get_service_by_name_or_id(service_id)
     if not service:
         return False, f"Service '{service_id}' could not be found.", None
 
-    # 3. Calculate end time
+    # 5. Calculate end time
     try:
         start_dt = datetime.strptime(time_str, "%H:%M")
         end_dt = start_dt + timedelta(minutes=service["duration_minutes"])
@@ -528,7 +557,7 @@ def book_appointment(customer_name, phone, service_id, barber_id=None, date_str=
     except ValueError:
         return False, "Invalid time format. Please provide HH:MM in 24-hr format.", None
 
-    # 4. Active Barbers & Chair Allocation
+    # 6. Active Stations & Allocation
     active_barbers = get_active_barbers(date_str)
     if not active_barbers:
         return False, f"No styling staff are on duty on {date_str}. The salon is inactive on this day.", None
@@ -536,16 +565,16 @@ def book_appointment(customer_name, phone, service_id, barber_id=None, date_str=
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Determine candidate barbers
+    # Determine candidate stations
     assigned_barber = None
     if barber_id and str(barber_id).lower() not in ["default", "any", "none", "auto"]:
         target_b = get_barber_by_name_or_id(barber_id)
         if not target_b or not any(ab["id"] == target_b["id"] for ab in active_barbers):
             b_name = target_b["name"] if target_b else barber_id
             conn.close()
-            return False, f"Stylist '{b_name}' is not on duty on {date_str}.", None
+            return False, f"Station '{b_name}' is not on duty on {date_str}.", None
 
-        # Check conflict for this specific barber
+        # Check conflict for this specific station
         cursor.execute("""
         SELECT id, customer_name, start_time, end_time FROM appointments
         WHERE barber_id = ? 
@@ -575,8 +604,16 @@ def book_appointment(customer_name, phone, service_id, barber_id=None, date_str=
                 free_stations.append(ab)
 
         if free_stations:
-            # Sort by total non-cancelled bookings on that date (Load Balancing)
-            # This ensures Station 1 and Station 2 alternate evenly!
+            # Check the last assigned booking in the salon to ensure true alternating preference (never static preference to Station 1)
+            cursor.execute("""
+            SELECT barber_id FROM appointments 
+            WHERE status != 'CANCELLED' 
+            ORDER BY id DESC LIMIT 1
+            """)
+            last_app = cursor.fetchone()
+            last_bid = last_app["barber_id"] if last_app else "B1"
+            preferred_bid = "B2" if "1" in str(last_bid) else "B1"
+
             def get_station_daily_load(s):
                 cursor.execute("""
                 SELECT COUNT(*) FROM appointments
@@ -584,7 +621,12 @@ def book_appointment(customer_name, phone, service_id, barber_id=None, date_str=
                 """, (s["id"], date_str))
                 return cursor.fetchone()[0]
 
-            free_stations.sort(key=get_station_daily_load)
+            def station_priority_key(s):
+                daily_load = get_station_daily_load(s)
+                pref_score = 0 if s["id"] == preferred_bid else 1
+                return (daily_load, pref_score)
+
+            free_stations.sort(key=station_priority_key)
             assigned_barber = free_stations[0]
 
         if not assigned_barber:
@@ -601,7 +643,7 @@ def book_appointment(customer_name, phone, service_id, barber_id=None, date_str=
     conn.commit()
     conn.close()
 
-    return True, f"Appointment #{appointment_id} confirmed for {customer_name} with {assigned_barber['name']} on {date_str} at {time_str} ({service['name']} - ₹{int(service['price_inr'])}).", appointment_id
+    return True, f"Appointment #{appointment_id} confirmed for {customer_name} on {date_str} at {time_str} ({service['name']} - ₹{int(service['price_inr'])}).", appointment_id
 
 
 def book_walkin_appointment(customer_name: str, phone: str, service_id: str, barber_id: str = None, time_str: str = None) -> tuple[bool, str, int | None]:
@@ -633,7 +675,24 @@ def cancel_appointment_by_phone(phone):
     cursor.execute("UPDATE appointments SET status = 'CANCELLED' WHERE id = ?", (row["id"],))
     conn.commit()
     conn.close()
-    return True, f"Appointment #{row['id']} for {row['service_name']} with {row['barber_name']} on {row['appointment_date']} at {row['start_time']} has been successfully cancelled."
+    return True, f"Appointment #{row['id']} for {row['service_name']} on {row['appointment_date']} at {row['start_time']} has been successfully cancelled."
+
+
+def get_appointment_by_id(app_id: int):
+    """Fetches a single appointment record by its primary key ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM appointments WHERE id = ?", (app_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        app = dict(row)
+        if "2" in str(app.get("barber_id", "")) or "2" in str(app.get("barber_name", "")):
+            app["barber_name"] = "Station 2"
+        else:
+            app["barber_name"] = "Station 1"
+        return app
+    return None
 
 
 def cancel_appointment_by_slot(date_str, time_str, barber_id=None):

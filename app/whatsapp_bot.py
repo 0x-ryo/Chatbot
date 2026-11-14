@@ -26,7 +26,8 @@ from engine.hybrid_agent import HybridSalonAgent
 from engine.rule_engine import get_master_menu
 from database.db import (
     init_db, get_all_appointments, get_live_metrics, update_appointment_status,
-    resolve_handover, resolve_complaint, get_all_complaints, get_handover_queue
+    resolve_handover, resolve_complaint, get_all_complaints, get_handover_queue,
+    get_appointment_by_id, log_chat_interaction
 )
 try:
     from salon_config import SALON_NAME, PHONE_WHATSAPP, ADDRESS
@@ -319,15 +320,148 @@ async def api_book_appointment(request: Request):
         return {"success": False, "error": str(e)}
 
 
+def send_outbound_whatsapp_message(to_phone: str, message_text: str) -> bool:
+    """
+    Sends an outbound WhatsApp notification to the customer phone number.
+    Supports Neonize active client, Twilio REST API, Meta Graph API, and records audit log to SQLite.
+    """
+    if not to_phone or not message_text:
+        return False
+
+    clean_digits = re.sub(r"\D", "", str(to_phone))
+    clean_10 = clean_digits[-10:] if len(clean_digits) >= 10 else clean_digits
+    full_phone = f"91{clean_10}"
+    dispatched = False
+
+    # 1. Neonize Client (if connected 24/7 gateway)
+    global _neonize_client
+    if _neonize_client and pairing_state.get("connected"):
+        try:
+            from neonize.proto.waE2E.WAWebProtobufsE2E_pb2 import Message
+            from neonize.utils.jid import build_jid
+            target_jid = build_jid(f"{full_phone}@s.whatsapp.net")
+            msg_obj = Message(conversation=message_text)
+            _neonize_client.send_message(target_jid, msg_obj)
+            dispatched = True
+            print(f"[Outbound WhatsApp via Neonize]: Sent to +{full_phone}")
+        except Exception as e:
+            print(f"[Outbound Neonize Error]: {e}")
+
+    # 2. Twilio REST API fallback
+    twilio_sid = os.environ.get("TWILIO_ACCOUNT_SID")
+    twilio_auth = os.environ.get("TWILIO_AUTH_TOKEN")
+    twilio_from = os.environ.get("TWILIO_WHATSAPP_NUMBER", "whatsapp:+14155238886")
+    if not dispatched and twilio_sid and twilio_auth:
+        try:
+            from twilio.rest import Client
+            tw_client = Client(twilio_sid, twilio_auth)
+            tw_client.messages.create(
+                from_=twilio_from,
+                to=f"whatsapp:+{full_phone}",
+                body=message_text
+            )
+            dispatched = True
+            print(f"[Outbound WhatsApp via Twilio]: Sent to +{full_phone}")
+        except Exception as te:
+            print(f"[Outbound Twilio Error]: {te}")
+
+    # 3. Meta Cloud API fallback
+    meta_token = os.environ.get("META_ACCESS_TOKEN")
+    meta_phone_id = os.environ.get("META_PHONE_NUMBER_ID")
+    if not dispatched and meta_token and meta_phone_id:
+        try:
+            import requests
+            url = f"https://graph.facebook.com/v21.0/{meta_phone_id}/messages"
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": full_phone,
+                "type": "text",
+                "text": {"body": message_text}
+            }
+            res = requests.post(url, headers={"Authorization": f"Bearer {meta_token}", "Content-Type": "application/json"}, json=payload, timeout=5)
+            if res.status_code in [200, 201]:
+                dispatched = True
+                print(f"[Outbound WhatsApp via Meta API]: Sent to +{full_phone}")
+        except Exception as me:
+            print(f"[Outbound Meta API Error]: {me}")
+
+    # 4. Always record in chat_logs table for audit & dashboard visibility
+    try:
+        log_chat_interaction(
+            session_id=clean_10,
+            user_message=f"[System Outbound Action]",
+            bot_response=message_text,
+            intent="outbound_notification",
+            confidence=1.0,
+            engine="WhatsApp_Notification_Dispatch",
+            latency_ms=0.0
+        )
+    except Exception as dbe:
+        print(f"[Chat Log Record Error]: {dbe}")
+
+    return True
+
+
 @app.post("/api/action/status")
 async def api_update_status(request: Request):
-    """Updates appointment status (e.g. COMPLETED, CANCELLED, BOOKED) and optional station seating."""
+    """
+    Updates appointment status (e.g. COMPLETED, CANCELLED, BOOKED) and optional station seating.
+    Dispatches WhatsApp cancellation notice or visit completion & billing receipt to the customer.
+    """
     data = await request.json()
     app_id = int(data.get("id", 0))
     new_status = data.get("status", "COMPLETED")
     station_id = data.get("station_id")
+
+    app_details = get_appointment_by_id(app_id)
     success = update_appointment_status(app_id, new_status, station_id)
-    return {"success": success, "id": app_id, "status": new_status, "station_id": station_id}
+
+    notification_dispatched = False
+    notification_preview = ""
+
+    if success and app_details:
+        cust_phone = app_details.get("phone", "")
+        cust_name = app_details.get("customer_name", "Valued Customer")
+        svc_name = app_details.get("service_name", "Salon Service")
+        app_date = app_details.get("appointment_date", "")
+        app_time = app_details.get("start_time", "")
+        app_price = app_details.get("price_inr", 0)
+
+        stn_disp = "Station 2" if (station_id and "2" in str(station_id)) or "2" in str(app_details.get("barber_id", "")) else "Station 1"
+
+        if new_status.upper() == "CANCELLED":
+            notification_preview = (
+                f"✂️ *Razors-n-scissors · Cancellation Notice*\n\n"
+                f"Dear {cust_name},\n"
+                f"Your appointment *#{app_id}* for *{svc_name}* on *{app_date}* at *{app_time}* has been successfully cancelled.\n\n"
+                f"If you'd like to reschedule or book another slot, reply with *1-7* or type *'menu'* anytime.\n\n"
+                f"— Front Desk Reception, Razors-n-scissors (BH-5)"
+            )
+            notification_dispatched = send_outbound_whatsapp_message(cust_phone, notification_preview)
+
+        elif new_status.upper() == "COMPLETED":
+            notification_preview = (
+                f"✂️ *Razors-n-scissors · Visit Receipt & Greetings* 💈\n\n"
+                f"Dear {cust_name},\n"
+                f"Thank you for visiting Razors-n-scissors today! We hope you loved your grooming service.\n\n"
+                f"🧾 *Visit Summary:*\n"
+                f"• *Booking ID:* #{app_id}\n"
+                f"• *Service:* {svc_name}\n"
+                f"• *Station:* {stn_disp}\n"
+                f"• *Total Amount Billed:* ₹{int(app_price)}\n"
+                f"• *Payment Status:* Paid & Completed ✅\n\n"
+                f"🌟 Thank you for choosing us on campus. Have a wonderful day ahead!"
+            )
+            notification_dispatched = send_outbound_whatsapp_message(cust_phone, notification_preview)
+
+    return {
+        "success": success, 
+        "id": app_id, 
+        "status": new_status, 
+        "station_id": station_id,
+        "notification_dispatched": notification_dispatched,
+        "notification_preview": notification_preview
+    }
 
 
 @app.post("/api/action/handover")

@@ -349,8 +349,8 @@ with st.sidebar:
     st.divider()
 
     st.markdown("### ⚡ Live Counter Sync")
-    auto_refresh = st.toggle("Auto-Refresh (30s)", value=False, help="Enable automatic background refresh every 30 seconds. Disabled by default to prevent screen flicker.")
-    if st.button("🔄 Refresh Counter Data", use_container_width=True):
+    st.caption("🟢 **Real-Time Auto-Refresh Active (Every 5s)**")
+    if st.button("🔄 Force Refresh Now", use_container_width=True):
         st.session_state.last_sync = get_ist_now().strftime("%H:%M:%S")
         st.rerun()
 
@@ -534,260 +534,264 @@ with quick_col3:
 st.divider()
 
 
-# ----------------- 3. KPI STAT HIGHLIGHTS (PULSE CLINIC METRICS) -----------------
-# Filter today's appointments
-today_apps = [a for a in all_apps if a.get("appointment_date") == today_str]
-today_booked_count = len([a for a in today_apps if a.get("status") == "BOOKED"])
-today_in_service_count = len([a for a in today_apps if a.get("status") == "IN_SERVICE"])
-today_completed_count = len([a for a in today_apps if a.get("status") == "COMPLETED"])
-today_revenue = sum(float(a.get("price_inr", 0)) for a in today_apps if a.get("status") == "COMPLETED")
-today_projected = sum(float(a.get("price_inr", 0)) for a in today_apps if a.get("status") in ["BOOKED", "IN_SERVICE", "COMPLETED"])
+# ----------------- 3. LIVE OPERATIONS REAL-TIME CONTAINER -----------------
+def render_live_operations_body():
+    # Freshly fetch live data directly on every fragment cycle (every 5 seconds)
+    live_data_frag = fetch_live_cloud_data()
+    apps_frag = live_data_frag["appointments"]
+    pending_ho = [h for h in live_data_frag["handovers"] if h.get("status") == "PENDING"]
+    open_comp = [c for c in live_data_frag["complaints"] if c.get("status") == "OPEN"]
 
-m1, m2, m3, m4 = st.columns(4)
-m1.metric(
-    label="Today's Appointments",
-    value=len(today_apps),
-    delta=f"{today_booked_count} Upcoming · {len(all_apps)} Total Recorded"
-)
-m2.metric(
-    label="In-Chair Right Now",
-    value=today_in_service_count,
-    delta=f"{active_barber_count} Active Chair Stations"
-)
-m3.metric(
-    label="Completed Today",
-    value=today_completed_count,
-    delta=f"₹{int(today_revenue):,} Billed"
-)
-m4.metric(
-    label="Today's Revenue",
-    value=f"₹{int(today_revenue):,}",
-    delta=f"₹{int(today_projected):,} Projected"
-)
+    cur_active_b = get_active_barbers(today_str)
+    cur_active_count = len(cur_active_b)
+    cur_active_ids = [ab["id"] for ab in cur_active_b]
+    cur_all_b = get_all_barbers()
 
-st.divider()
+    # 3. KPI STAT HIGHLIGHTS
+    today_apps = [a for a in apps_frag if a.get("appointment_date") == today_str]
+    today_booked_count = len([a for a in today_apps if a.get("status") == "BOOKED"])
+    today_in_service_count = len([a for a in today_apps if a.get("status") == "IN_SERVICE"])
+    today_completed_count = len([a for a in today_apps if a.get("status") == "COMPLETED"])
+    today_revenue = sum(float(a.get("price_inr", 0)) for a in today_apps if a.get("status") == "COMPLETED")
+    today_projected = sum(float(a.get("price_inr", 0)) for a in today_apps if a.get("status") in ["BOOKED", "IN_SERVICE", "COMPLETED"])
 
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric(
+        label="Today's Appointments",
+        value=len(today_apps),
+        delta=f"{today_booked_count} Upcoming · {len(apps_frag)} Total Recorded"
+    )
+    m2.metric(
+        label="In-Chair Right Now",
+        value=today_in_service_count,
+        delta=f"{cur_active_count} Active Chair Stations"
+    )
+    m3.metric(
+        label="Completed Today",
+        value=today_completed_count,
+        delta=f"₹{int(today_revenue):,} Billed"
+    )
+    m4.metric(
+        label="Today's Revenue",
+        value=f"₹{int(today_revenue):,}",
+        delta=f"₹{int(today_projected):,} Projected"
+    )
 
-# ----------------- 4. DUAL-CHAIR STATION STATUS MONITOR -----------------
-st.subheader("💈 Live Salon Stations (BH-5)")
+    st.divider()
 
-st_col1, st_col2 = st.columns(2)
+    # 4. DUAL-CHAIR STATION STATUS MONITOR (Live status & completed billing only)
+    st.subheader("💈 Live Salon Stations (BH-5)")
 
-# Station 1
-chair1_b = next((b for b in all_b if "B1" in b["id"] or "1" in b["name"]), all_b[0] if all_b else None)
-chair1_active = chair1_b and chair1_b["id"] in active_ids if chair1_b else False
-chair1_current = [a for a in today_apps if a.get("barber_id") == (chair1_b["id"] if chair1_b else "") and a.get("status") == "IN_SERVICE"]
-chair1_next = [a for a in today_apps if a.get("barber_id") == (chair1_b["id"] if chair1_b else "") and a.get("status") == "BOOKED"]
+    st_col1, st_col2 = st.columns(2)
 
-with st_col1:
-    with st.container(border=True):
-        st.markdown("#### 🪑 Station 1")
-        if not chair1_active:
-            st.markdown('<span class="badge-cancelled">INACTIVE TODAY</span>', unsafe_allow_html=True)
-            st.caption("No appointments assigned to Station 1 today.")
-        elif chair1_current:
-            cur = chair1_current[0]
-            st.markdown('<span class="badge-inservice">IN-SERVICE NOW</span>', unsafe_allow_html=True)
-            st.markdown(f"**Client:** {cur['customer_name']} (`{cur['phone']}`)")
-            st.markdown(f"**Service:** ✂️ {cur['service_name']} (₹{int(cur['price_inr'])})")
-            st.caption(f"Started at: {cur['start_time']} | Scheduled End: {cur.get('end_time', 'N/A')}")
-            if st.button("Complete Service & Mark Paid ✅", key=f"ch1_comp_{cur['id']}", use_container_width=True):
-                send_action_update("status", {"id": cur['id'], "status": "COMPLETED"})
-                st.toast(f"Station 1 service completed! WhatsApp visit receipt sent to {cur['customer_name']}.")
-                time.sleep(0.5)
-                st.rerun()
-        else:
-            st.markdown('<span class="badge-completed">READY / AVAILABLE</span>', unsafe_allow_html=True)
-            st.caption(f"Upcoming queue today: {len(chair1_next)} client(s)")
-            if chair1_next:
-                nxt = chair1_next[0]
-                st.markdown(f"**Next:** {nxt['customer_name']} at **{nxt['start_time']}** ({nxt['service_name']})")
-                if st.button("Seat at Station 1 ▶️", key=f"ch1_seat_{nxt['id']}", use_container_width=True, type="primary"):
-                    send_action_update("status", {"id": nxt['id'], "status": "IN_SERVICE", "station_id": "B1"})
-                    st.rerun()
+    # Station 1
+    chair1_b = next((b for b in cur_all_b if "B1" in b["id"] or "1" in b["name"]), cur_all_b[0] if cur_all_b else None)
+    chair1_active = chair1_b and chair1_b["id"] in cur_active_ids if chair1_b else False
+    chair1_current = [a for a in today_apps if a.get("barber_id") == (chair1_b["id"] if chair1_b else "") and a.get("status") == "IN_SERVICE"]
+    chair1_next = [a for a in today_apps if a.get("barber_id") == (chair1_b["id"] if chair1_b else "") and a.get("status") == "BOOKED"]
 
-# Station 2
-chair2_b = next((b for b in all_b if "B2" in b["id"] or "2" in b["name"]), all_b[1] if len(all_b) > 1 else None)
-chair2_active = chair2_b and chair2_b["id"] in active_ids if chair2_b else False
-chair2_current = [a for a in today_apps if a.get("barber_id") == (chair2_b["id"] if chair2_b else "") and a.get("status") == "IN_SERVICE"]
-chair2_next = [a for a in today_apps if a.get("barber_id") == (chair2_b["id"] if chair2_b else "") and a.get("status") == "BOOKED"]
-
-with st_col2:
-    with st.container(border=True):
-        st.markdown("#### 🪑 Station 2")
-        if not chair2_active:
-            st.markdown('<span class="badge-cancelled">INACTIVE TODAY</span>', unsafe_allow_html=True)
-            st.caption("No appointments assigned to Station 2 today.")
-        elif chair2_current:
-            cur = chair2_current[0]
-            st.markdown('<span class="badge-inservice">IN-SERVICE NOW</span>', unsafe_allow_html=True)
-            st.markdown(f"**Client:** {cur['customer_name']} (`{cur['phone']}`)")
-            st.markdown(f"**Service:** ✂️ {cur['service_name']} (₹{int(cur['price_inr'])})")
-            st.caption(f"Started at: {cur['start_time']} | Scheduled End: {cur.get('end_time', 'N/A')}")
-            if st.button("Complete Service & Mark Paid ✅", key=f"ch2_comp_{cur['id']}", use_container_width=True):
-                send_action_update("status", {"id": cur['id'], "status": "COMPLETED"})
-                st.toast(f"Station 2 service completed! WhatsApp visit receipt sent to {cur['customer_name']}.")
-                time.sleep(0.5)
-                st.rerun()
-        else:
-            st.markdown('<span class="badge-completed">READY / AVAILABLE</span>', unsafe_allow_html=True)
-            st_2_candidates = chair2_next if chair2_next else chair1_next
-            st.caption(f"Upcoming queue today: {len(chair2_next)} client(s)")
-            if st_2_candidates:
-                nxt = st_2_candidates[0]
-                st.markdown(f"**Next:** {nxt['customer_name']} at **{nxt['start_time']}** ({nxt['service_name']})")
-                if st.button("Seat at Station 2 ▶️", key=f"ch2_seat_{nxt['id']}", use_container_width=True, type="primary"):
-                    send_action_update("status", {"id": nxt['id'], "status": "IN_SERVICE", "station_id": "B2"})
-                    st.rerun()
-
-st.divider()
-
-
-# ----------------- 5. LIVE APPOINTMENT QUEUE TABLE (PULSE CLINIC PATIENT QUEUE) -----------------
-st.subheader("📋 Customer Appointment Queue & Counter Dispatch")
-
-f_col1, f_col2, f_col3, f_col4 = st.columns([2, 2, 3, 2])
-with f_col1:
-    date_filter = st.selectbox("Date Scope:", ["Today Only", "All Upcoming & Past", "Tomorrow"], index=0)
-with f_col2:
-    status_filter = st.selectbox("Filter Status:", ["All", "BOOKED (Upcoming)", "IN_SERVICE", "COMPLETED", "CANCELLED"], index=0)
-with f_col3:
-    search_q = st.text_input("🔍 Search Client Name or Phone:", placeholder="e.g. Suman, 9876543210")
-with f_col4:
-    station_filter = st.selectbox("Filter Station:", ["All Stations", "Station 1 Only", "Station 2 Only"], index=0)
-
-# Filter Logic
-display_apps = all_apps
-
-# 1. Date
-if date_filter == "Today Only":
-    display_apps = [a for a in display_apps if a.get("appointment_date") == today_str]
-elif date_filter == "Tomorrow":
-    tomorrow_str = (get_ist_now() + timedelta(days=1)).strftime("%Y-%m-%d")
-    display_apps = [a for a in display_apps if a.get("appointment_date") == tomorrow_str]
-
-# 2. Status
-if "BOOKED" in status_filter:
-    display_apps = [a for a in display_apps if a.get("status") == "BOOKED"]
-elif status_filter != "All":
-    display_apps = [a for a in display_apps if a.get("status") == status_filter]
-
-# 3. Station
-if station_filter == "Station 1 Only":
-    display_apps = [a for a in display_apps if "1" in str(a.get("barber_id", "")) or "1" in str(a.get("barber_name", ""))]
-elif station_filter == "Station 2 Only":
-    display_apps = [a for a in display_apps if "2" in str(a.get("barber_id", "")) or "2" in str(a.get("barber_name", ""))]
-
-# 4. Search
-if search_q.strip():
-    q = search_q.lower().strip()
-    display_apps = [
-        a for a in display_apps
-        if q in str(a.get("customer_name", "")).lower() or q in str(a.get("phone", "")).lower() or q in str(a.get("service_name", "")).lower()
-    ]
-
-# Sort by Date & Time
-display_apps = sorted(display_apps, key=lambda x: (x.get("appointment_date", ""), x.get("start_time", "")), reverse=True)
-
-if display_apps:
-    st.markdown(f"**Showing {len(display_apps)} appointment(s):**")
-    for app in display_apps:
+    with st_col1:
         with st.container(border=True):
-            c_id, c_client, c_service, c_slot, c_price, c_status, c_act = st.columns([1, 3, 3, 3, 1.5, 2, 3])
-            
-            with c_id:
-                st.markdown(f"**#{app['id']}**")
+            st.markdown("#### 🪑 Station 1")
+            if not chair1_active:
+                st.markdown('<span class="badge-cancelled">INACTIVE TODAY</span>', unsafe_allow_html=True)
+                st.caption("No appointments assigned to Station 1 today.")
+            elif chair1_current:
+                cur = chair1_current[0]
+                st.markdown('<span class="badge-inservice">IN-SERVICE NOW</span>', unsafe_allow_html=True)
+                st.markdown(f"**Client:** {cur['customer_name']} (`{cur['phone']}`)")
+                st.markdown(f"**Service:** ✂️ {cur['service_name']} (₹{int(cur['price_inr'])})")
+                st.caption(f"Started at: {cur['start_time']} | Scheduled End: {cur.get('end_time', 'N/A')}")
+                if st.button("Complete Service & Mark Paid ✅", key=f"ch1_comp_{cur['id']}", use_container_width=True):
+                    send_action_update("status", {"id": cur['id'], "status": "COMPLETED"})
+                    st.toast(f"Station 1 service completed! WhatsApp visit receipt sent to {cur['customer_name']}.")
+                    time.sleep(0.5)
+                    st.rerun()
+            else:
+                st.markdown('<span class="badge-completed">READY / AVAILABLE</span>', unsafe_allow_html=True)
+                st.caption(f"Upcoming queue today: {len(chair1_next)} client(s)")
 
-            with c_client:
-                st.markdown(f"**{app['customer_name']}**")
-                st.caption(f"📞 {app['phone']}")
+    # Station 2
+    chair2_b = next((b for b in cur_all_b if "B2" in b["id"] or "2" in b["name"]), cur_all_b[1] if len(cur_all_b) > 1 else None)
+    chair2_active = chair2_b and chair2_b["id"] in cur_active_ids if chair2_b else False
+    chair2_current = [a for a in today_apps if a.get("barber_id") == (chair2_b["id"] if chair2_b else "") and a.get("status") == "IN_SERVICE"]
+    chair2_next = [a for a in today_apps if a.get("barber_id") == (chair2_b["id"] if chair2_b else "") and a.get("status") == "BOOKED"]
 
-            with c_service:
-                st.markdown(f"✂️ **{app['service_name']}**")
-                b_raw = str(app.get('barber_name', ''))
-                b_disp = "Station 2" if ("2" in b_raw or "2" in str(app.get('barber_id', ''))) else "Station 1"
-                st.caption(f"🪑 {b_disp}")
+    with st_col2:
+        with st.container(border=True):
+            st.markdown("#### 🪑 Station 2")
+            if not chair2_active:
+                st.markdown('<span class="badge-cancelled">INACTIVE TODAY</span>', unsafe_allow_html=True)
+                st.caption("No appointments assigned to Station 2 today.")
+            elif chair2_current:
+                cur = chair2_current[0]
+                st.markdown('<span class="badge-inservice">IN-SERVICE NOW</span>', unsafe_allow_html=True)
+                st.markdown(f"**Client:** {cur['customer_name']} (`{cur['phone']}`)")
+                st.markdown(f"**Service:** ✂️ {cur['service_name']} (₹{int(cur['price_inr'])})")
+                st.caption(f"Started at: {cur['start_time']} | Scheduled End: {cur.get('end_time', 'N/A')}")
+                if st.button("Complete Service & Mark Paid ✅", key=f"ch2_comp_{cur['id']}", use_container_width=True):
+                    send_action_update("status", {"id": cur['id'], "status": "COMPLETED"})
+                    st.toast(f"Station 2 service completed! WhatsApp visit receipt sent to {cur['customer_name']}.")
+                    time.sleep(0.5)
+                    st.rerun()
+            else:
+                st.markdown('<span class="badge-completed">READY / AVAILABLE</span>', unsafe_allow_html=True)
+                st.caption(f"Upcoming queue today: {len(chair2_next)} client(s)")
 
-            with c_slot:
-                st.markdown(f"📅 **{app['appointment_date']}**")
-                st.caption(f"⏰ {app['start_time']} – {app.get('end_time', '')}")
+    st.divider()
 
-            with c_price:
-                st.markdown(f"**₹{int(app['price_inr'])}**")
+    # 5. LIVE APPOINTMENT QUEUE TABLE (Full seating dispatch handled here directly)
+    st.subheader("📋 Customer Appointment Queue & Counter Dispatch")
 
-            with c_status:
-                st_val = app.get("status", "BOOKED")
-                if st_val == "BOOKED":
-                    st.markdown('<span class="badge-booked">BOOKED</span>', unsafe_allow_html=True)
-                elif st_val == "IN_SERVICE":
-                    st.markdown('<span class="badge-inservice">IN-CHAIR</span>', unsafe_allow_html=True)
-                elif st_val == "COMPLETED":
-                    st.markdown('<span class="badge-completed">COMPLETED</span>', unsafe_allow_html=True)
-                else:
-                    st.markdown('<span class="badge-cancelled">CANCELLED</span>', unsafe_allow_html=True)
+    f_col1, f_col2, f_col3, f_col4 = st.columns([2, 2, 3, 2])
+    with f_col1:
+        date_filter = st.selectbox("Date Scope:", ["Today Only", "All Upcoming & Past", "Tomorrow"], index=0, key="f_date")
+    with f_col2:
+        status_filter = st.selectbox("Filter Status:", ["All", "BOOKED (Upcoming)", "IN_SERVICE", "COMPLETED", "CANCELLED"], index=0, key="f_status")
+    with f_col3:
+        search_q = st.text_input("🔍 Search Client Name or Phone:", placeholder="e.g. Suman, 9876543210", key="f_search")
+    with f_col4:
+        station_filter = st.selectbox("Filter Station:", ["All Stations", "Station 1 Only", "Station 2 Only"], index=0, key="f_station")
 
-            with c_act:
-                if st_val == "BOOKED":
-                    btn_a1, btn_a2, btn_a3 = st.columns([1.2, 1.2, 1])
-                    with btn_a1:
-                        if st.button("🪑 Stn 1", key=f"seat1_{app['id']}", use_container_width=True, help="Seat client in Station 1"):
-                            send_action_update("status", {"id": app['id'], "status": "IN_SERVICE", "station_id": "B1"})
-                            st.rerun()
-                    with btn_a2:
-                        if st.button("🪑 Stn 2", key=f"seat2_{app['id']}", use_container_width=True, help="Seat client in Station 2"):
-                            send_action_update("status", {"id": app['id'], "status": "IN_SERVICE", "station_id": "B2"})
-                            st.rerun()
-                    with btn_a3:
-                        if st.button("❌", key=f"cnl_{app['id']}", use_container_width=True, help="Cancel booking and dispatch WhatsApp notification"):
-                            send_action_update("status", {"id": app['id'], "status": "CANCELLED"})
-                            st.toast(f"Booking #{app['id']} cancelled! WhatsApp cancellation notice dispatched to {app['customer_name']}.")
+    # Filter Logic
+    display_apps = apps_frag
+
+    # 1. Date
+    if date_filter == "Today Only":
+        display_apps = [a for a in display_apps if a.get("appointment_date") == today_str]
+    elif date_filter == "Tomorrow":
+        tomorrow_str = (get_ist_now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        display_apps = [a for a in display_apps if a.get("appointment_date") == tomorrow_str]
+
+    # 2. Status
+    if "BOOKED" in status_filter:
+        display_apps = [a for a in display_apps if a.get("status") == "BOOKED"]
+    elif status_filter != "All":
+        display_apps = [a for a in display_apps if a.get("status") == status_filter]
+
+    # 3. Station
+    if station_filter == "Station 1 Only":
+        display_apps = [a for a in display_apps if "1" in str(a.get("barber_id", "")) or "1" in str(a.get("barber_name", ""))]
+    elif station_filter == "Station 2 Only":
+        display_apps = [a for a in display_apps if "2" in str(a.get("barber_id", "")) or "2" in str(a.get("barber_name", ""))]
+
+    # 4. Search
+    if search_q.strip():
+        q = search_q.lower().strip()
+        display_apps = [
+            a for a in display_apps
+            if q in str(a.get("customer_name", "")).lower() or q in str(a.get("phone", "")).lower() or q in str(a.get("service_name", "")).lower()
+        ]
+
+    # Sort by Date & Time
+    display_apps = sorted(display_apps, key=lambda x: (x.get("appointment_date", ""), x.get("start_time", "")), reverse=True)
+
+    if display_apps:
+        st.markdown(f"**Showing {len(display_apps)} appointment(s):**")
+        for app in display_apps:
+            with st.container(border=True):
+                c_id, c_client, c_service, c_slot, c_price, c_status, c_act = st.columns([1, 3, 3, 3, 1.5, 2, 3])
+                
+                with c_id:
+                    st.markdown(f"**#{app['id']}**")
+
+                with c_client:
+                    st.markdown(f"**{app['customer_name']}**")
+                    st.caption(f"📞 {app['phone']}")
+
+                with c_service:
+                    st.markdown(f"✂️ **{app['service_name']}**")
+                    b_raw = str(app.get('barber_name', ''))
+                    b_disp = "Station 2" if ("2" in b_raw or "2" in str(app.get('barber_id', ''))) else "Station 1"
+                    st.caption(f"🪑 {b_disp}")
+
+                with c_slot:
+                    st.markdown(f"📅 **{app['appointment_date']}**")
+                    st.caption(f"⏰ {app['start_time']} – {app.get('end_time', '')}")
+
+                with c_price:
+                    st.markdown(f"**₹{int(app['price_inr'])}**")
+
+                with c_status:
+                    st_val = app.get("status", "BOOKED")
+                    if st_val == "BOOKED":
+                        st.markdown('<span class="badge-booked">BOOKED</span>', unsafe_allow_html=True)
+                    elif st_val == "IN_SERVICE":
+                        st.markdown('<span class="badge-inservice">IN-CHAIR</span>', unsafe_allow_html=True)
+                    elif st_val == "COMPLETED":
+                        st.markdown('<span class="badge-completed">COMPLETED</span>', unsafe_allow_html=True)
+                    else:
+                        st.markdown('<span class="badge-cancelled">CANCELLED</span>', unsafe_allow_html=True)
+
+                with c_act:
+                    if st_val == "BOOKED":
+                        btn_a1, btn_a2, btn_a3 = st.columns([1.2, 1.2, 1])
+                        with btn_a1:
+                            if st.button("🪑 Stn 1", key=f"seat1_{app['id']}", use_container_width=True, help="Seat client in Station 1"):
+                                send_action_update("status", {"id": app['id'], "status": "IN_SERVICE", "station_id": "B1"})
+                                st.rerun()
+                        with btn_a2:
+                            if st.button("🪑 Stn 2", key=f"seat2_{app['id']}", use_container_width=True, help="Seat client in Station 2"):
+                                send_action_update("status", {"id": app['id'], "status": "IN_SERVICE", "station_id": "B2"})
+                                st.rerun()
+                        with btn_a3:
+                            if st.button("❌", key=f"cnl_{app['id']}", use_container_width=True, help="Cancel booking and dispatch WhatsApp notification"):
+                                send_action_update("status", {"id": app['id'], "status": "CANCELLED"})
+                                st.toast(f"Booking #{app['id']} cancelled! WhatsApp cancellation notice dispatched to {app['customer_name']}.")
+                                time.sleep(0.5)
+                                st.rerun()
+                    elif st_val == "IN_SERVICE":
+                        if st.button("Complete & Billed ✅", key=f"done_{app['id']}", use_container_width=True, type="primary"):
+                            send_action_update("status", {"id": app['id'], "status": "COMPLETED"})
+                            st.toast(f"Booking #{app['id']} completed & billed! WhatsApp visit receipt dispatched to {app['customer_name']}.")
                             time.sleep(0.5)
                             st.rerun()
-                elif st_val == "IN_SERVICE":
-                    if st.button("Complete & Billed ✅", key=f"done_{app['id']}", use_container_width=True, type="primary"):
-                        send_action_update("status", {"id": app['id'], "status": "COMPLETED"})
-                        st.toast(f"Booking #{app['id']} completed & billed! WhatsApp visit receipt dispatched to {app['customer_name']}.")
-                        time.sleep(0.5)
+                    else:
+                        st.caption("Archived")
+    else:
+        st.info("No matching appointments in the selected view.")
+
+    st.divider()
+
+    # 6. ESCALATIONS & GRIEVANCES DESK
+    esc_col1, esc_col2 = st.columns(2)
+
+    with esc_col1:
+        st.subheader("🚨 Staff Handover Requests")
+        if pending_ho:
+            for ho in pending_ho:
+                with st.container(border=True):
+                    st.markdown(f"**Customer:** `{ho['customer_phone']}`")
+                    st.markdown(f"**Query:** *\"{ho['last_query']}\"*")
+                    st.caption(f"Reason: {ho['reason']}")
+                    if st.button("Mark Handled ✅", key=f"res_ho_{ho['id']}"):
+                        send_action_update("handover", {"id": ho['id']})
                         st.rerun()
-                else:
-                    st.caption("Archived")
+        else:
+            st.success("✅ **Queue Clear:** No pending staff handover requests. AI Bot handling 100% of campus chats.")
+
+    with esc_col2:
+        st.subheader("⚠️ Customer Feedback & Grievances")
+        if open_comp:
+            for comp in open_comp:
+                with st.container(border=True):
+                    st.markdown(f"**Ticket #{comp['id']}** ({comp.get('severity', 'MEDIUM')} Severity)")
+                    st.markdown(f"**Client:** {comp.get('customer_name', 'Client')} (`{comp.get('phone', 'N/A')}`)")
+                    st.markdown(f"**Issue:** {comp.get('complaint_text', '')}")
+                    c_note = st.text_input("Resolution note:", key=f"note_{comp['id']}")
+                    if st.button("Resolve Ticket ✅", key=f"res_c_{comp['id']}"):
+                        send_action_update("complaint", {"id": comp['id'], "notes": c_note or "Resolved at reception"})
+                        st.rerun()
+        else:
+            st.success("✅ **Zero Grievances:** All customer tickets resolved. Customer satisfaction is 100%.")
+
+# Register st.fragment for seamless 5-second live background polling
+if hasattr(st, "fragment"):
+    render_live_operations = st.fragment(run_every=5)(render_live_operations_body)
 else:
-    st.info("No matching appointments in the selected view.")
+    render_live_operations = render_live_operations_body
 
-st.divider()
-
-
-# ----------------- 6. ESCALATIONS & GRIEVANCES DESK -----------------
-esc_col1, esc_col2 = st.columns(2)
-
-with esc_col1:
-    st.subheader("🚨 Staff Handover Requests")
-    if pending_handovers:
-        for ho in pending_handovers:
-            with st.container(border=True):
-                st.markdown(f"**Customer:** `{ho['customer_phone']}`")
-                st.markdown(f"**Query:** *\"{ho['last_query']}\"*")
-                st.caption(f"Reason: {ho['reason']}")
-                if st.button("Mark Handled ✅", key=f"res_ho_{ho['id']}"):
-                    send_action_update("handover", {"id": ho['id']})
-                    st.rerun()
-    else:
-        st.success("✅ **Queue Clear:** No pending staff handover requests. AI Bot handling 100% of campus chats.")
-
-with esc_col2:
-    st.subheader("⚠️ Customer Feedback & Grievances")
-    if open_complaints:
-        for comp in open_complaints:
-            with st.container(border=True):
-                st.markdown(f"**Ticket #{comp['id']}** ({comp.get('severity', 'MEDIUM')} Severity)")
-                st.markdown(f"**Client:** {comp.get('customer_name', 'Client')} (`{comp.get('phone', 'N/A')}`)")
-                st.markdown(f"**Issue:** {comp.get('complaint_text', '')}")
-                c_note = st.text_input("Resolution note:", key=f"note_{comp['id']}")
-                if st.button("Resolve Ticket ✅", key=f"res_c_{comp['id']}"):
-                    send_action_update("complaint", {"id": comp['id'], "notes": c_note or "Resolved at reception"})
-                    st.rerun()
-    else:
-        st.success("✅ **Zero Grievances:** All customer tickets resolved. Customer satisfaction is 100%.")
+render_live_operations()
 
 st.divider()
 
@@ -807,8 +811,3 @@ with st.expander("💈 **View Official Salon Rate Card (16 Services [S1-S16])**"
             for s in services
         ]
         st.dataframe(svc_display, use_container_width=True)
-
-# Auto-refresh loop (only runs when explicitly toggled on)
-if auto_refresh:
-    time.sleep(30)
-    st.rerun()

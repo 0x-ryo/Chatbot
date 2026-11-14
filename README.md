@@ -1,4 +1,4 @@
-# Customer Support Salon-AI & Operational Management Portal for a Real Small Business
+# Customer Support & Operational Management Portal for a Real Small Business
 ### 💈 Razors-n-scissors Barber Salon (BH-5, LPU Campus) · 24/7 Intelligent AI Operations & WhatsApp Bot
 
 [![Course](https://img.shields.io/badge/Course-INT428%20AI%20Essentials-blue.svg)](https://www.lpu.in)
@@ -11,7 +11,7 @@
 
 > **Continuous Assessment (CA) Project**  
 > **Course:** INT428: Artificial Intelligence Essentials · Lovely Professional University  
-> **Allocated Topic (Group 13):** *Customer Support Salon-AI & Operational Management Portal for a Real Small Business (Salon / Barber Shop)*  
+> **Allocated Topic (Group 13):** *Customer Support & Operational Management Portal for a Real Small Business (Salon / Barber Shop)*  
 > **Target Enterprise:** **Razors-n-scissors Barber Salon**, BH-5, Lovely Professional University Campus, Phagwara, Punjab.
 
 ---
@@ -21,7 +21,7 @@
 | Service | Access Link | Description |
 | :--- | :--- | :--- |
 | **Live Operations Portal** | [salon-ai-0x-ryo.streamlit.app](https://salon-ai-0x-ryo.streamlit.app/) | Streamlit Cloud live counter dashboard, appointment scheduler, revenue analytics, and INT428 AI Lab Inspector. |
-| **GitHub Repository** | [github.com/0x-ryo/Salon-AI](https://github.com/0x-ryo/Salon-AI) | Official source code repository, test suites, architecture documentation, and CI/CD specs. |
+| **GitHub Repository** | [github.com/0x-ryo/chatbot](https://github.com/0x-ryo/chatbot) | Official source code repository, test suites, architecture documentation, and CI/CD specs. |
 | **24/7 Cloud Bot Gateway** | [salon-ai-backend-6xdf.onrender.com](https://salon-ai-backend-6xdf.onrender.com) | Python FastAPI + Neonize WebSocket cloud engine on Render (runs 24/7 without requiring a laptop). |
 | **WhatsApp Device Pairing** | [Pairing Screen (`/pair`)](https://salon-ai-backend-6xdf.onrender.com/pair) | Real-time multi-device pairing interface for WhatsApp salon bot. |
 | **Target Salon WhatsApp** | **`+91 XXXXX-XXXXX`** *(Protected · Configured via `WA_TARGET_PHONE`)* | Real salon contact number for multi-turn appointment bookings, inquiries, and grievances. |
@@ -229,8 +229,8 @@ A common operational concern for business owners is data permanence. In this pla
 
 ### 1. Clone & Install Dependencies
 ```bash
-git clone https://github.com/0x-ryo/Salon-AI.git
-cd Salon-AI
+git clone https://github.com/0x-ryo/chatbot.git
+cd chatbot
 pip install -r requirements.txt
 ```
 
@@ -257,7 +257,7 @@ Navigate to [http://localhost:8000/pair](http://localhost:8000/pair) to view the
 ## 📁 Repository Directory Structure
 
 ```
-Salon-AI/
+chatbot/
 ├── app/
 │   ├── app.py                 # Pulse Clinic Front-Desk Reception Portal (Live Counter Operations)
 │   ├── pages/

@@ -395,12 +395,12 @@ class RuleBasedSalonChatbot:
                     else:
                         extracted["past_date_attempt"] = cand_date
 
-        # 7. Time Extraction
-        time_match = re.search(r"\b(?:at\s+)?([01]?\d|2[0-3]):([0-5]\d)\s*(am|pm)?\b", text_lower)
+        # 7. Time Extraction (supports 10:30, 10.30, 4.30 pm, 11am, 11)
+        time_match = re.search(r"\b(?:at\s+)?([01]?\d|2[0-3])[:.]([0-5]\d)\s*(am|pm)?\b", text_lower)
         if not time_match:
             time_match = re.search(r"\b(?:at\s+)?([01]?\d|2[0-3])\s*(am|pm)\b", text_lower)
         if not time_match and (self.state == "AWAITING_TIME" or re.search(r"\bat\s+\d", text_lower)):
-            time_match = re.search(r"\b(?:at\s+)?([01]?\d|2[0-3])(?::([0-5]\d))?\s*(am|pm)?\b", text_lower)
+            time_match = re.search(r"\b(?:at\s+)?([01]?\d|2[0-3])(?:[:.]([0-5]\d))?\s*(am|pm)?\b", text_lower)
 
         if time_match:
             hour_str = time_match.group(1)
